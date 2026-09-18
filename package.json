@@ -20,7 +20,7 @@
     "gold",
     "xaut"
   ],
-  "author": "FJ",
+  "author": "FJ <frajonato@gmail.com>",
   "license": "MIT",
   "dependencies": {
     "@qvac/sdk": "^0.19.1"

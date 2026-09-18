@@ -11,6 +11,24 @@ import { deriveDeterministicSignals, mergeDeterministicSignals } from './marketR
 export const DEFAULT_MODEL_SRC = QWEN3_1_7B_INST_Q4;
 export const DEFAULT_MODEL_LABEL = 'QWEN3_1_7B_INST_Q4';
 
+const MARKET_CLASSIFICATION_SCHEMA = {
+  type: 'object',
+  properties: {
+    category: { type: 'string', enum: ['macro', 'btc', 'gold', 'xaut-btc', 'mixed', 'noise'] },
+    signal: { type: 'string', enum: ['hawkish', 'dovish', 'risk-on', 'risk-off', 'neutral', 'unclear'] },
+    affectedAssets: {
+      type: 'array',
+      items: { type: 'string', enum: ['BTC', 'Gold', 'XAUt/BTC'] },
+    },
+    mechanism: { type: 'string' },
+    xautBtcRead: { type: 'string' },
+    confidence: { type: 'integer', minimum: 0, maximum: 100 },
+    actionableSummary: { type: 'string' },
+  },
+  required: ['category', 'signal', 'affectedAssets', 'mechanism', 'xautBtcRead', 'confidence', 'actionableSummary'],
+  additionalProperties: false,
+};
+
 export async function classifyMarketNote(marketNote, options = {}) {
   const {
     modelSrc = DEFAULT_MODEL_SRC,
@@ -29,7 +47,7 @@ export async function classifyMarketNote(marketNote, options = {}) {
     const history = [
       {
         role: 'system',
-        content: 'You are a concise market classification engine. Return only valid JSON.',
+        content: 'You are a concise market classification engine. Return only valid JSON. /no_think',
       },
       {
         role: 'user',
@@ -37,11 +55,25 @@ export async function classifyMarketNote(marketNote, options = {}) {
       },
     ];
 
-    const result = completion({ modelId, history, stream: true });
+    const result = completion({
+      modelId,
+      history,
+      stream: true,
+      responseFormat: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'market_classification',
+          schema: MARKET_CLASSIFICATION_SCHEMA,
+        },
+      },
+    });
     const text = await collectCompletionText(result, streamTo);
-    const modelAnalysis = parseModelOutput(text);
     const deterministicSignals = deriveDeterministicSignals(marketNote);
-    return mergeDeterministicSignals(modelAnalysis, deterministicSignals);
+    const modelAnalysis = parseModelOutput(text);
+    const baseAnalysis = isPlainObject(modelAnalysis)
+      ? modelAnalysis
+      : buildFallbackAnalysis(marketNote, deterministicSignals, text);
+    return mergeDeterministicSignals(baseAnalysis, deterministicSignals);
   } finally {
     if (!keepModelLoaded) {
       await unloadModel({ modelId });
@@ -50,6 +82,15 @@ export async function classifyMarketNote(marketNote, options = {}) {
 }
 
 export async function collectCompletionText(result, streamTo = null) {
+  if (result?.events && result?.final) {
+    for await (const event of result.events) {
+      if (event.type === 'contentDelta' && streamTo) streamTo.write(event.text);
+    }
+    const final = await result.final;
+    if (streamTo) streamTo.write('\n');
+    return String(final?.contentText ?? final?.raw?.fullText ?? '').trim();
+  }
+
   if (result?.tokenStream) {
     let text = '';
     for await (const token of result.tokenStream) {
@@ -77,6 +118,32 @@ export function parseModelOutput(text) {
   }
 }
 
+function buildFallbackAnalysis(marketNote, deterministicSignals, rawModelText = '') {
+  const note = String(marketNote ?? '');
+  const category = note.toLowerCase().includes('xaut') || note.toLowerCase().includes('xpb') ? 'xaut-btc' : 'mixed';
+  const signal = deterministicSignals.macroSignal && deterministicSignals.macroSignal !== 'unknown'
+    ? deterministicSignals.macroSignal
+    : note.toLowerCase().includes('risk') || deterministicSignals.xpbBias !== 'unknown'
+      ? 'risk-on'
+      : 'neutral';
+
+  const xpbDirection = deterministicSignals.xpbBias === 'up'
+    ? 'xpb likely rises'
+    : deterministicSignals.xpbBias === 'down'
+      ? 'xpb likely falls'
+      : 'mixed';
+
+  return {
+    category,
+    signal,
+    affectedAssets: ['BTC', 'Gold', 'XAUt/BTC'],
+    mechanism: 'Local QVAC inference returned incomplete JSON, so the app used its deterministic market overlay to keep live mode functional. The overlay reads the current note, compares BTC versus XAUt relative performance, then maps that relative move to the XAUt/BTC ratio.',
+    xautBtcRead: `${xpbDirection}. ${deterministicSignals.ratioRule}`,
+    confidence: rawModelText ? 65 : 55,
+    actionableSummary: 'Live mode completed with current market data and deterministic XAUt/BTC overlay. Treat the fallback as a conservative classification when the local model output is malformed.',
+  };
+}
+
 function stripMarkdownFence(text) {
   return text
     .replace(/^```(?:json)?\s*/i, '')
@@ -86,6 +153,10 @@ function stripMarkdownFence(text) {
 
 function stripThinkingBlocks(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function defaultProgress(progress) {
