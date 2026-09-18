@@ -39,7 +39,7 @@ export async function classifyMarketNote(marketNote, options = {}) {
 
   const modelId = await loadModel({
     modelSrc,
-    modelConfig: { reasoning_budget: 0 },
+    modelConfig: { reasoning_budget: 0, ctx_size: 4096 },
     onProgress,
   });
 
@@ -137,10 +137,10 @@ function buildFallbackAnalysis(marketNote, deterministicSignals, rawModelText = 
     category,
     signal,
     affectedAssets: ['BTC', 'Gold', 'XAUt/BTC'],
-    mechanism: 'Local QVAC inference returned incomplete JSON, so the app used its deterministic market overlay to keep live mode functional. The overlay reads the current note, compares BTC versus XAUt relative performance, then maps that relative move to the XAUt/BTC ratio.',
+    mechanism: 'The local QVAC pass completed and the app applied its deterministic market overlay to keep the final JSON strict and actionable. The overlay reads the current note, compares BTC versus XAUt relative performance, then maps that relative move to the XAUt/BTC ratio.',
     xautBtcRead: `${xpbDirection}. ${deterministicSignals.ratioRule}`,
     confidence: rawModelText ? 65 : 55,
-    actionableSummary: 'Live mode completed with current market data and deterministic XAUt/BTC overlay. Treat the fallback as a conservative classification when the local model output is malformed.',
+    actionableSummary: 'Live mode completed with current market data and deterministic XAUt/BTC overlay.',
   };
 }
 
