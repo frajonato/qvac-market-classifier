@@ -74,6 +74,10 @@ export function buildMacroNote(macroData) {
     lines.push(`  Next events: ${upcomingList} → expect volatility`);
   }
 
+  if (lines.length === 1) {
+    lines.push('  No live macro fields available from public endpoints in this run.');
+  }
+
   return lines.join('\n');
 }
 
