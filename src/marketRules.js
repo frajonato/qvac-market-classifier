@@ -19,7 +19,7 @@ const DOVISH_PATTERNS = [
 
 const GOLD_UP_PATTERNS = [/gold\s+(rallied|rose|up|higher|jumped|surged)/i, /xau\s+(rallied|rose|up|higher)/i];
 const GOLD_DOWN_PATTERNS = [/gold\s+(slipped|fell|down|lower|dropped|sold\s+off)/i, /xau\s+(fell|down|lower|dropped)/i];
-const GOLD_FLAT_PATTERNS = [/gold\s+(was\s+)?flat/i, /gold\s+(unchanged|held\s+steady)/i];
+const GOLD_FLAT_PATTERNS = [/gold\s+(was\s+)?flat/i, /gold\s+(unchanged|held\s+steady|held\s+flat)/i];
 
 const BTC_UP_PATTERNS = [/btc\s+(rallied|rose|up|higher|jumped|surged)/i, /bitcoin\s+(rallied|rose|up|higher|jumped|surged)/i, /bitcoin\s+etf\s+inflows/i, /btc\s+etf\s+inflows/i];
 const BTC_DOWN_PATTERNS = [/btc\s+(fell|down|lower|dropped|sold\s+off)/i, /bitcoin\s+(fell|down|lower|dropped|sold\s+off)/i];
@@ -55,11 +55,19 @@ export function mergeDeterministicSignals(modelAnalysis, deterministicSignals) {
   }
 
   if (deterministicSignals.xpbBias && deterministicSignals.xpbBias !== 'unknown') {
-    merged.xautBtcRead = formatXpbRead(deterministicSignals.xpbBias, deterministicSignals.ratioRule);
+    const deterministicRead = formatXpbRead(deterministicSignals.xpbBias, deterministicSignals.ratioRule);
+    merged.xautBtcRead = deterministicRead;
+    merged.affectedAssets = mergeAffectedAssets(merged.affectedAssets, 'XAUt/BTC');
+    merged.actionableSummary = `Deterministic XAUt/BTC overlay: ${deterministicRead}`;
   }
 
   merged.deterministicOverlay = deterministicSignals;
   return merged;
+}
+
+function mergeAffectedAssets(current, asset) {
+  const assets = Array.isArray(current) ? current : [];
+  return assets.includes(asset) ? assets : [...assets, asset];
 }
 
 function deriveMacroSignal(note) {

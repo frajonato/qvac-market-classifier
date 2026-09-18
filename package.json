@@ -1,7 +1,7 @@
 {
   "name": "qvac-market-note-classifier",
   "version": "1.0.0",
-  "description": "A local AI CLI that classifies macro, BTC, gold, silver, and XAUt/BTC market notes with Tether's QVAC SDK.",
+  "description": "A local AI CLI that classifies macro, BTC, gold, and XAUt/BTC market notes with Tether's QVAC SDK.",
   "type": "module",
   "main": "src/index.js",
   "bin": {
