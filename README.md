@@ -1,30 +1,34 @@
 # QVAC Market Note Classifier
 
-A small local AI app that classifies short market notes for macro, BTC, gold, and **XAUt/BTC** relevance.
+Local AI CLI that classifies macro, BTC, gold, and **XAUt/BTC** market notes using Tether's QVAC SDK.
 
-It uses Tether's QVAC SDK to run inference on-device. No cloud AI API is called, no API key is needed, and the text you analyze stays on your machine after the first model download.
+The app runs inference on-device with QVAC. No cloud AI API is used, no AI API key is required, and analyzed text stays on the local machine after the first model download.
 
 ## What it does
 
-Paste a headline or short market note, or run live mode to fetch current BTC/XAUt data automatically.
+You can analyze either:
 
-Live mode currently fetches:
+- a custom market note/headline, or
+- live market data fetched from public market APIs.
 
-- Bitfinex public API `tBTC:XAUT` for live XAUt/BTC xpb, bid, ask, spread, 24h change, and volume
+Live mode fetches:
+
+- Bitfinex public API `tBTC:XAUT` for XAUt/BTC xpb, bid, ask, spread, 24h change, volume, and optional candles
 - CoinGecko simple price API for BTC/USD, XAUt/USD, and 24h changes
-- Historical 1-hour candles from Bitfinex (up to ~42 days) for technical analysis (RSI, SMA, ATR, Fib, S/R, Bollinger Bands)
-- **NEW:** Macro data (DXY, yields, real yields, upcoming economic calendar events)
-- **NEW:** News sentiment analysis (deterministic scoring by asset: BTC, Gold, USD)
+- Optional technical context from Bitfinex 1h candles: RSI, SMA, ATR, support/resistance, Fibonacci, Bollinger Bands
+- Optional macro context: DXY, yields, and calendar events
+- Optional news sentiment context: deterministic keyword scoring by asset
 
-The app returns a structured classification:
+The app returns structured JSON with:
 
-- category: macro, BTC, gold, XAUt/BTC, mixed, or noise
-- signal: hawkish, dovish, risk-on, risk-off, neutral, or unclear
-- affected assets
-- macro mechanism: data -> Fed expectations -> USD/yields -> opportunity cost/liquidity -> asset impact
-- XAUt/BTC read, using xpb as XAUt per 1 BTC
-- deterministic overlay: keyword/rule-based macro and XAUt/BTC sanity check
-- actionable summary
+- `category`
+- `signal`
+- `affectedAssets`
+- `mechanism`
+- `xautBtcRead`
+- `confidence`
+- `actionableSummary`
+- `deterministicOverlay`
 
 This is not financial advice. It is a local classification demo for market notes.
 
@@ -32,20 +36,19 @@ This is not financial advice. It is a local classification demo for market notes
 
 - SDK package: `@qvac/sdk`
 - SDK version used: `^0.19.1`
-- Required QVAC calls used by this app:
+- QVAC calls used:
   - `loadModel`
   - `completion`
   - `unloadModel`
 - Default model constant: `QWEN3_1_7B_INST_Q4`
-- Qwen thinking is disabled with `modelConfig: { reasoning_budget: 0 }` for concise JSON output
 
-The first run downloads the selected model. After the model is cached, inference runs locally on the device.
+The first run downloads the selected model. After it is cached, inference runs locally on the device.
 
 ## Requirements
 
 - Node.js `>=22.17.0`
 - npm
-- Internet connection for the first model download only
+- Internet connection for the first model download and for live market-data fetches
 
 Tested locally with:
 
@@ -65,31 +68,14 @@ npm install
 npm start -- --live
 ```
 
-Live mode fetches Bitfinex XAUt/BTC and CoinGecko BTC/XAUt USD data, builds a self-contained market note, and then analyzes that note locally with QVAC plus deterministic ratio rules.
+Live mode fetches Bitfinex XAUt/BTC and CoinGecko BTC/XAUt USD data, builds a self-contained market note, and analyzes that note locally with QVAC plus deterministic ratio rules.
 
-### Optional flags for enriched analysis
-
-Add `--macro` to include macro context (DXY, yields, economic calendar):
-
-```bash
-npm start -- --live --macro
-```
-
-Add `--tech` or `--technical` to include technical levels (RSI, SMA, ATR, support/resistance, Fibonacci):
+Optional enriched modes:
 
 ```bash
 npm start -- --live --tech
-```
-
-Add `--sentiment` to include news sentiment analysis (BTC, gold, USD):
-
-```bash
+npm start -- --live --macro
 npm start -- --live --sentiment
-```
-
-Combine multiple flags:
-
-```bash
 npm start -- --live --macro --tech --sentiment
 ```
 
@@ -107,21 +93,26 @@ npm start -- "Weak US payrolls missed expectations, markets priced more Fed cuts
 
 ## Example output
 
-The model returns JSON similar to:
-
 ```json
 {
-  "category": "macro",
-  "signal": "hawkish",
-  "affectedAssets": ["BTC", "Gold", "XAUt/BTC"],
-  "mechanism": "Hot CPI increases expectations of restrictive Fed policy, lifting USD and yields, which raises the opportunity cost of holding gold while pressuring liquidity-sensitive assets.",
-  "xautBtcRead": "Mixed to higher xpb if gold underperforms BTC after the hawkish shock.",
-  "confidence": 72,
-  "actionableSummary": "The note is mainly a hawkish macro signal with direct relevance for metals and the BTC-vs-gold ratio."
+  "category": "btc",
+  "signal": "risk-on",
+  "affectedAssets": ["BTC", "XAUt/BTC"],
+  "mechanism": "BTC is outperforming XAUt, so 1 BTC buys more XAUt and the XAUt/BTC xpb ratio rises.",
+  "xautBtcRead": "xpb likely rises because BTC is outperforming XAUt over the measured period.",
+  "confidence": 90,
+  "actionableSummary": "The note is mainly a BTC-strength signal with direct relevance for XAUt/BTC.",
+  "deterministicOverlay": {
+    "macroSignal": "unknown",
+    "goldMove": "unknown",
+    "btcMove": "unknown",
+    "xpbBias": "up",
+    "notes": ["xpb=up"]
+  }
 }
 ```
 
-Exact wording varies because the LLM runs locally.
+Exact wording varies because the model runs locally.
 
 ## Test and syntax check
 
@@ -130,23 +121,27 @@ npm test
 npm run check
 ```
 
+Current test suite: 73 Node test-runner tests.
+
 ## Project structure
 
 ```text
 src/
   cli.js                  CLI argument handling and formatting
   index.js                executable entrypoint
-  liveData.js             Bitfinex XAUt/BTC + CoinGecko price fetching + candle history
-  macroData.js            Macro context: DXY, yields, economic calendar
-  technicalIndicators.js  Technical analysis: RSI, SMA, ATR, Fib, S/R, Bollinger Bands
-  sentimentAnalysis.js    News sentiment: deterministic analysis by asset
+  liveData.js             Bitfinex XAUt/BTC + CoinGecko fetching + candle history
+  macroData.js            Macro context
+  technicalIndicators.js  RSI, SMA, ATR, Fib, S/R, Bollinger Bands
+  sentimentAnalysis.js    Deterministic news sentiment by asset
   marketPrompt.js         Prompt construction and input cleanup
   marketRules.js          Deterministic ratio and macro signal rules
   qvacAnalysis.js         QVAC loadModel + completion integration
+
 test/
-  *.test.js               Node test runner tests (74 tests)
+  *.test.js               Node test-runner tests
+
 examples/
-  sample-notes.txt        example market notes
+  sample-notes.txt        Example market notes
 ```
 
 ## License
